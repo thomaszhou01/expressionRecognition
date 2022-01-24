@@ -1,35 +1,111 @@
-from scipy.misc import face
-import tensorflow as tf
+from asyncore import read
+import cv2
 import numpy as np
-from numpy import loadtxt
+from numpy import asarray
+from numpy import savetxt
+import mediapipe as mp
 import pandas as pd
-from tensorflow.python import keras
-import keras.models
-import keras.layers
+import tensorflow as tf
 
 
-faceMeshData = loadtxt('data/data.csv', delimiter=',')
-actualExpressions = loadtxt('data/labels.csv', delimiter=',')
-actualExpressions = np.reshape(actualExpressions, (-1, 1))
-actualExpressions = actualExpressions.astype(int)
-print(np.reshape(faceMeshData[0], (-1, 1404)))
-print(actualExpressions[0])
-train_dataset = tf.data.Dataset.from_tensor_slices((faceMeshData,actualExpressions))
+def captureExpression():
+    mp_drawing = mp.solutions.drawing_utils
+    mp_drawing_styles = mp.solutions.drawing_styles
+    mp_face_mesh = mp.solutions.face_mesh
 
+    drawing_spec = mp_drawing.DrawingSpec(thickness=1, circle_radius=1)
+    cap = cv2.VideoCapture(0)
+    startCapture = False
 
-BATCH_SIZE = 8
-SHUFFLE_BUFFER_SIZE = 100
-train_dataset = train_dataset.shuffle(SHUFFLE_BUFFER_SIZE).batch(BATCH_SIZE)
+    #data
+    faceMeshData = np.zeros(shape = (468,3))
+    model = tf.keras.models.load_model('models/jan23.h5')
 
-model = keras.models.Sequential([
-    keras.layers.Dense(1404),
-    keras.layers.Dense(1404, activation='relu'),
-    keras.layers.Dense(4, activation='softmax')
-])
+    with mp_face_mesh.FaceMesh(
+        max_num_faces=1,
+        refine_landmarks=True,
+        min_detection_confidence=0.5,
+        min_tracking_confidence=0.5) as face_mesh:
 
-model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=1e-3), loss=tf.keras.losses.SparseCategoricalCrossentropy(), metrics=['accuracy'])
-model.fit(faceMeshData, actualExpressions, epochs=20)
-test = model.evaluate(faceMeshData, actualExpressions, verbose=1) 
-print(test)
-print(model.predict(np.reshape(faceMeshData[0], (-1, 1404))))
-model.save('models/jan23.h5')
+        while cap.isOpened():
+            success, image = cap.read()
+            if not success:
+                print("Ignoring empty camera frame.")
+                # If loading a video, use 'break' instead of 'continue'.
+                continue
+
+            # To improve performance, optionally mark the image as not writeable to
+            # pass by reference.
+            image.flags.writeable = False
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            results = face_mesh.process(image)
+
+            # Draw the face mesh annotations on the image.
+            image.flags.writeable = True
+            image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+            if results.multi_face_landmarks:
+                for face_landmarks in results.multi_face_landmarks:
+                    mp_drawing.draw_landmarks(
+                        image=image,
+                        landmark_list=face_landmarks,
+                        connections=mp_face_mesh.FACEMESH_TESSELATION,
+                        landmark_drawing_spec=None,
+                        connection_drawing_spec=mp_drawing_styles
+                        .get_default_face_mesh_tesselation_style())
+                    mp_drawing.draw_landmarks(
+                        image=image,
+                        landmark_list=face_landmarks,
+                        connections=mp_face_mesh.FACEMESH_CONTOURS,
+                        landmark_drawing_spec=None,
+                        connection_drawing_spec=mp_drawing_styles
+                        .get_default_face_mesh_contours_style())
+                    mp_drawing.draw_landmarks(
+                        image=image,
+                        landmark_list=face_landmarks,
+                        connections=mp_face_mesh.FACEMESH_IRISES,
+                        landmark_drawing_spec=None,
+                        connection_drawing_spec=mp_drawing_styles
+                        .get_default_face_mesh_iris_connections_style())
+            width  = cap.get(3)
+            height = cap.get(4)
+
+            cv2.circle(image,(int(width/2),int(height/2)), 150, (0,0,255), 1)
+
+            # Flip the image horizontally for a selfie-view display.
+            cv2.imshow('MediaPipe Face Mesh', cv2.flip(image, 1))
+            if cv2.waitKey(1) & 0xFF == 27:
+                break
+            elif cv2.waitKey(1) & 0xFF == 32:
+                startCapture = True
+            
+            if startCapture:
+                try:
+                    createData(faceMeshData, results.multi_face_landmarks[0])
+                    x = model.predict(np.reshape(faceMeshData, (-1, 1404)))
+                    maxNum = max(x[0])
+                    indexNum = np.where(x[0] == maxNum)
+                    indexNum = indexNum[0][0]
+                    print(indexNum)
+                    if(indexNum == 0):
+                        print("happy")
+                    elif(indexNum == 1):
+                        print("sad")
+                    elif(indexNum == 2):
+                        print("angry")
+                    elif(indexNum == 3):
+                        print("excited")
+                except Exception as e:
+                    print(e)
+    cap.release()
+
+def createData(data, landmark):
+    for i in range(0, 468):
+        data[i][0] = landmark.landmark[i].x
+        data[i][1] = landmark.landmark[i].y
+        data[i][2] = landmark.landmark[i].z
+
+def setExpression():
+    return input("Expression: 0 = happy, 1 = sad, 2 = angry, 3 = excited, 4 = other: ")
+    
+
+captureExpression()
