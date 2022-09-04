@@ -72,12 +72,14 @@ def captureExpression():
             cv2.circle(image,(int(width/2),int(height/2)), 150, (0,0,255), 1)
 
             # Flip the image horizontally for a selfie-view display.
-            cv2.imshow('MediaPipe Face Mesh', cv2.flip(image, 1))
+            image = cv2.flip(image, 1)
+            
+
             if cv2.waitKey(1) & 0xFF == 27:
                 break
             elif cv2.waitKey(1) & 0xFF == 32:
                 startCapture = True
-            
+            emotion = "none"
             if startCapture:
                 try:
                     createData(faceMeshData, results.multi_face_landmarks[0])
@@ -85,17 +87,19 @@ def captureExpression():
                     maxNum = max(x[0])
                     indexNum = np.where(x[0] == maxNum)
                     indexNum = indexNum[0][0]
-                    print(indexNum)
                     if(indexNum == 0):
-                        print("happy")
+                        emotion = "happy"
                     elif(indexNum == 1):
-                        print("sad")
+                        emotion = "sad"
                     elif(indexNum == 2):
-                        print("angry")
+                        emotion = "angry"
                     elif(indexNum == 3):
-                        print("excited")
+                        emotion = "excited"
                 except Exception as e:
                     print(e)
+            
+            cv2.putText(image, text = emotion, org = (100, 100), fontFace = cv2.FONT_HERSHEY_DUPLEX,fontScale = 1.0,color = (125, 246, 55),thickness = 3)
+            cv2.imshow('MediaPipe Face Mesh', image)
     cap.release()
 
 def createData(data, landmark):
